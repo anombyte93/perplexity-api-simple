@@ -256,7 +256,7 @@ This is a simplified, Perplexity-focused version. For multi-provider support, se
 
 MIT
 
-
+<p align="center">
 <img width="1715" height="492" alt="perplexity-mcp-free" src="https://github.com/user-attachments/assets/601979c0-ad67-4d92-908b-f3b770cc3842" />
 <img width="468" height="746" alt="LinkedIn Visual" src="https://github.com/user-attachments/assets/3ba429f9-b196-441b-beef-598b10c81bd6" />
-
+</p>
