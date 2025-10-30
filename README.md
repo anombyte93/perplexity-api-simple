@@ -252,6 +252,7 @@ This is a simplified, Perplexity-focused version. For multi-provider support, se
 
 MIT
 
-## Credits
+<img width="764" height="719" alt="Cost_Savings" src="https://github.com/user-attachments/assets/fff961ba-3de0-4e1b-881e-8c76dd634204" />
+<img width="1715" height="492" alt="perplexity-mcp-free" src="https://github.com/user-attachments/assets/601979c0-ad67-4d92-908b-f3b770cc3842" />
+<img width="468" height="746" alt="LinkedIn Visual" src="https://github.com/user-attachments/assets/3ba429f9-b196-441b-beef-598b10c81bd6" />
 
-Based on the [perplexity-api-free](https://github.com/yourusername/perplexity-api-free) project, simplified for ease of use with TaskMaster and Claude Code.
