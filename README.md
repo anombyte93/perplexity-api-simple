@@ -2,7 +2,9 @@
 
 A simple, clean drop-in replacement for the official Perplexity API. Perfect for using with TaskMaster AI and Claude Code MCP server.
 
-<img width="764" height="719" alt="Cost_Savings" src="https://github.com/user-attachments/assets/fff961ba-3de0-4e1b-881e-8c76dd634204" />
+<p align="center">
+  <img width="764" height="719" alt="Cost_Savings" src="https://github.com/user-attachments/assets/fff961ba-3de0-4e1b-881e-8c76dd634204" />
+</p>
 
 ## Features
 
