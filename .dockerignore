@@ -70,9 +70,6 @@ docs/
 .claude/
 .mcp.json
 
-# Extension (not needed in container runtime)
-extension/
-
 # Scripts (not needed in container - use CMD instead)
 scripts/
 

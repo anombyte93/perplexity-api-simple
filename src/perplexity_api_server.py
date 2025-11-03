@@ -32,6 +32,7 @@ import time
 import json
 import secrets
 import io
+import zipfile
 from pathlib import Path
 
 # Add current directory to path
@@ -529,6 +530,54 @@ def clear_cookie_endpoint():
         'message': 'Cookie cleared! Please restart the server.',
         'requires_restart': True
     })
+
+
+@app.route('/download/extension', methods=['GET'])
+def download_extension():
+    """Download Chrome extension as ZIP file"""
+    try:
+        # Get extension directory path
+        extension_dir = Path(__file__).parent.parent / 'extension'
+
+        if not extension_dir.exists():
+            return "Error: Extension directory not found", 404
+
+        # Create ZIP file in memory
+        memory_file = io.BytesIO()
+
+        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Walk through extension directory and add all files
+            for root, dirs, files in os.walk(extension_dir):
+                # Skip hidden directories
+                dirs[:] = [d for d in dirs if not d.startswith('.')]
+
+                for file in files:
+                    # Skip hidden files
+                    if file.startswith('.'):
+                        continue
+
+                    file_path = Path(root) / file
+                    # Create archive name relative to extension directory
+                    arcname = Path('extension') / file_path.relative_to(extension_dir)
+                    zipf.write(file_path, arcname)
+
+        # Seek to beginning of file
+        memory_file.seek(0)
+
+        print("📦 Chrome extension downloaded")
+
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='perplexity-extension.zip'
+        )
+
+    except Exception as e:
+        print(f"❌ Error creating extension ZIP: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error: {str(e)}", 500
 
 
 if __name__ == '__main__':
