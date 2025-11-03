@@ -1,0 +1,40 @@
+services:
+  perplexity-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: perplexity-api-server
+    ports:
+      - "${PORT:-8765}:8765"
+    environment:
+      # Perplexity configuration
+      - PERPLEXITY_COOKIE=${PERPLEXITY_COOKIE}
+
+      # Server configuration
+      - PORT=8765
+      - HOST=0.0.0.0
+      - PYTHONUNBUFFERED=1
+    volumes:
+      # Persist API keys across container restarts
+      - ./.api_keys.json:/app/.api_keys.json
+
+      # Persist environment configuration
+      - ./.env:/app/.env
+
+      # Optional: Mount source code for development
+      # Uncomment the lines below for live development
+      # - ./src:/app/src
+      # - ./web:/app/web
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8765/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - perplexity-network
+
+networks:
+  perplexity-network:
+    driver: bridge

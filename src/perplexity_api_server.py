@@ -1,27 +1,27 @@
 #!/usr/bin/env python3
 """
-Perplexity API Server - Simple Drop-in Replacement
-Makes the free Perplexity library work as a local API server
+Perplexity API Server - Simple Proxy
+Provides a local API server that proxies requests to Perplexity using your cookie
 
-This server mimics the official Perplexity API, so you can use it with ANY tool
-that expects the Perplexity API by just changing the base URL.
+This server uses your Perplexity cookie to make authenticated searches and returns
+the raw Perplexity responses.
 
 Perfect for:
 - TaskMaster AI
 - Claude Code (MCP server)
-- Any OpenAI-compatible client
+- Any tool that needs Perplexity search capabilities
 
 Setup:
     1. Create .env file with:
-       PERPLEXITY_COOKIE=your-cookie-here-optional
+       PERPLEXITY_COOKIE=your-cookie-here
 
     2. Start server:
        ./scripts/start_server.sh
 
 Usage:
-    Configure your tools to use:
     - Base URL: http://localhost:8765
-    - API Key: Generate from web dashboard
+    - API Key: Generate from web dashboard at http://localhost:8765/
+    - Send POST to /chat/completions with query in messages format
 """
 
 from flask import Flask, request, jsonify, send_from_directory, send_file
@@ -32,6 +32,7 @@ import time
 import json
 import secrets
 import io
+import zipfile
 from pathlib import Path
 
 # Add current directory to path
@@ -42,7 +43,7 @@ from perplexity_fixed import PerplexityFixed
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
-print("✅ Perplexity API Server - Simple Version")
+print("✅ Perplexity Proxy Server")
 print("="*80)
 
 # Get cookie from environment if available
@@ -143,43 +144,18 @@ def track_api_key_tokens(api_key, input_tokens, output_tokens):
         key_data['total_output_tokens'] = key_data.get('total_output_tokens', 0) + output_tokens
         save_api_keys(keys_dict)
 
-def extract_json_from_text(text):
-    """Extract JSON from text that may contain conversational wrappers"""
-    import re
-
-    # Try to find JSON object or array in the text
-    json_pattern = r'(\{(?:[^{}]|(?:\{(?:[^{}]|(?:\{[^{}]*\}))*\}))*\}|\[(?:[^\[\]]|(?:\[(?:[^\[\]]|(?:\[[^\[\]]*\]))*\]))*\])'
-
-    matches = re.findall(json_pattern, text, re.DOTALL)
-
-    if matches:
-        # Return the largest JSON object found
-        largest_match = max(matches, key=len)
-        try:
-            json.loads(largest_match)
-            return largest_match
-        except:
-            pass
-
-    return text
 
 
 @app.route('/chat/completions', methods=['POST'])
 def chat_completions():
     """
-    Perplexity API compatible endpoint
-    Matches: https://api.perplexity.ai/chat/completions
+    Main Perplexity proxy endpoint
+    Accepts messages in standard chat format and returns raw Perplexity response
     """
     # Validate API key
     api_key = get_api_key_from_request()
     if not validate_api_key(api_key):
-        return jsonify({
-            'error': {
-                'message': 'Invalid API key',
-                'type': 'invalid_request_error',
-                'code': 'invalid_api_key'
-            }
-        }), 401
+        return "Error: Invalid API key", 401, {'Content-Type': 'text/plain; charset=utf-8'}
 
     increment_api_key_usage(api_key)
 
@@ -187,7 +163,7 @@ def chat_completions():
         data = request.json
         print(f"\n📥 Incoming request: {data.get('model', 'unknown model')}")
 
-        # Extract parameters (OpenAI SDK compatible format)
+        # Extract parameters
         messages = data.get('messages', [])
         model = data.get('model', 'sonar')
 
@@ -199,12 +175,7 @@ def chat_completions():
                 break
 
         if not query:
-            return jsonify({
-                'error': {
-                    'message': 'No user message found in messages array',
-                    'type': 'invalid_request_error'
-                }
-            }), 400
+            return "Error: No user message found in messages array", 400, {'Content-Type': 'text/plain; charset=utf-8'}
 
         print(f"🔍 Query: {query[:100]}...")
 
@@ -244,82 +215,124 @@ def chat_completions():
 
         print(f"✅ Response generated in {elapsed:.2f}s")
 
-        # Extract JSON if the response contains wrapped JSON
-        answer = extract_json_from_text(answer)
-
-        # Calculate token counts (rough approximation: 1 word ≈ 1.3 tokens)
+        # Track token usage (rough approximation: 1 word ≈ 1.3 tokens)
         prompt_tokens = int(len(query.split()) * 1.3)
         completion_tokens = int(len(answer.split()) * 1.3)
-        total_tokens = prompt_tokens + completion_tokens
-
-        # Track token usage
         track_api_key_tokens(api_key, prompt_tokens, completion_tokens)
 
-        # Return in Perplexity/OpenAI compatible format
-        return jsonify({
-            'id': f'chatcmpl-{int(time.time())}',
-            'object': 'chat.completion',
-            'created': int(time.time()),
-            'model': model,
-            'choices': [{
-                'index': 0,
-                'message': {
-                    'role': 'assistant',
-                    'content': answer
-                },
-                'finish_reason': 'stop'
-            }],
-            'usage': {
-                'prompt_tokens': prompt_tokens,
-                'completion_tokens': completion_tokens,
-                'total_tokens': total_tokens
-            }
-        })
+        # Return exactly what Perplexity gives us
+        return answer, 200, {'Content-Type': 'text/plain; charset=utf-8'}
 
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
 
-        return jsonify({
-            'error': {
-                'message': str(e),
-                'type': 'server_error',
-                'code': 500
-            }
-        }), 500
+        return f"Error: {str(e)}", 500, {'Content-Type': 'text/plain; charset=utf-8'}
 
 
-@app.route('/v1/chat/completions', methods=['POST'])
-def v1_chat_completions():
-    """OpenAI-compatible endpoint (routes to main endpoint)"""
-    return chat_completions()
+@app.route('/api/cost-savings', methods=['GET'])
+def get_cost_savings():
+    """Calculate cost savings vs official Perplexity Sonar-Pro pricing"""
+    keys_dict = load_api_keys()
 
+    total_input_tokens = 0
+    total_output_tokens = 0
 
-@app.route('/models', methods=['GET'])
-def list_models():
-    """List available models (Perplexity API compatible)"""
+    # Sum up all token usage across all keys
+    for key_data in keys_dict.values():
+        if isinstance(key_data, dict):
+            total_input_tokens += key_data.get('total_input_tokens', 0)
+            total_output_tokens += key_data.get('total_output_tokens', 0)
+
+    # Official Perplexity Sonar-Pro pricing (as of 2025)
+    # $3/1M input tokens, $15/1M output tokens
+    input_cost = (total_input_tokens / 1_000_000) * 3
+    output_cost = (total_output_tokens / 1_000_000) * 15
+    total_cost = input_cost + output_cost
+
+    # Format tokens in thousands with K suffix
+    def format_tokens(tokens):
+        if tokens == 0:
+            return "0"
+        elif tokens >= 1000:
+            return f"{round(tokens / 1000, 1)}K"
+        else:
+            return str(tokens)
+
+    total_tokens = total_input_tokens + total_output_tokens
+
+    # Model pricing (official Perplexity pricing as of 2025)
+    model_pricing = {
+        'sonar': {'input': 0.2, 'output': 0.2},  # $0.2/1M tokens
+        'sonar-pro': {'input': 3, 'output': 15},  # $3/1M input, $15/1M output
+        'sonar-reasoning': {'input': 3, 'output': 15},  # Same as pro
+        'sonar-deep-research': {'input': 5, 'output': 5}  # $5/1M tokens
+    }
+
+    # For now, we calculate all usage at sonar-pro pricing (most expensive)
+    # TODO: Track per-model usage for accurate breakdown
+    breakdown = {}
+    for model, pricing in model_pricing.items():
+        model_input_cost = (total_input_tokens / 1_000_000) * pricing['input']
+        model_output_cost = (total_output_tokens / 1_000_000) * pricing['output']
+        model_total_cost = model_input_cost + model_output_cost
+
+        breakdown[model] = {
+            'saved': round(model_total_cost, 2),
+            'tokens': total_tokens,
+            'input_tokens': total_input_tokens,
+            'output_tokens': total_output_tokens
+        }
+
     return jsonify({
-        'object': 'list',
-        'data': [
-            {'id': 'sonar', 'object': 'model', 'created': 1234567890, 'owned_by': 'perplexity'},
-            {'id': 'sonar-pro', 'object': 'model', 'created': 1234567890, 'owned_by': 'perplexity'},
-            {'id': 'sonar-reasoning', 'object': 'model', 'created': 1234567890, 'owned_by': 'perplexity'},
-            {'id': 'sonar-reasoning-pro', 'object': 'model', 'created': 1234567890, 'owned_by': 'perplexity'},
-            {'id': 'sonar-deep-research', 'object': 'model', 'created': 1234567890, 'owned_by': 'perplexity'}
-        ]
+        'total_saved': round(total_cost, 2),
+        'total_tokens': total_tokens,
+        'total_tokens_formatted': format_tokens(total_tokens),
+        'input_tokens': total_input_tokens,
+        'output_tokens': total_output_tokens,
+        'input_tokens_formatted': format_tokens(total_input_tokens),
+        'output_tokens_formatted': format_tokens(total_output_tokens),
+        'breakdown': breakdown
+    })
+
+
+@app.route('/api/providers', methods=['GET'])
+def get_providers():
+    """Stub endpoint for providers - Perplexity only"""
+    return jsonify({
+        'providers': ['perplexity'],
+        'active': ['perplexity']
+    })
+
+
+@app.route('/api/version', methods=['GET'])
+def get_version():
+    """Return server version"""
+    return jsonify({
+        'version': '1.0.0',
+        'service': 'perplexity-api-simple'
     })
 
 
 @app.route('/health', methods=['GET'])
-def health():
-    """Health check endpoint"""
+def health_check():
+    """Health check endpoint for Docker and monitoring"""
+    has_cookie = client is not None
     return jsonify({
         'status': 'healthy',
         'service': 'perplexity-api-simple',
-        'version': '1.0.0',
-        'using_cookie': cookies is not None,
-        'message': 'Simple Perplexity API replacement'
+        'authenticated': has_cookie,
+        'version': '1.0.0'
+    }), 200
+
+
+@app.route('/api/toggle-provider', methods=['POST'])
+def toggle_provider():
+    """Stub endpoint - Perplexity is always enabled"""
+    return jsonify({
+        'success': True,
+        'message': 'Perplexity is the only provider and cannot be disabled'
     })
 
 
@@ -519,11 +532,59 @@ def clear_cookie_endpoint():
     })
 
 
+@app.route('/download/extension', methods=['GET'])
+def download_extension():
+    """Download Chrome extension as ZIP file"""
+    try:
+        # Get extension directory path
+        extension_dir = Path(__file__).parent.parent / 'extension'
+
+        if not extension_dir.exists():
+            return "Error: Extension directory not found", 404
+
+        # Create ZIP file in memory
+        memory_file = io.BytesIO()
+
+        with zipfile.ZipFile(memory_file, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Walk through extension directory and add all files
+            for root, dirs, files in os.walk(extension_dir):
+                # Skip hidden directories
+                dirs[:] = [d for d in dirs if not d.startswith('.')]
+
+                for file in files:
+                    # Skip hidden files
+                    if file.startswith('.'):
+                        continue
+
+                    file_path = Path(root) / file
+                    # Create archive name relative to extension directory
+                    arcname = Path('extension') / file_path.relative_to(extension_dir)
+                    zipf.write(file_path, arcname)
+
+        # Seek to beginning of file
+        memory_file.seek(0)
+
+        print("📦 Chrome extension downloaded")
+
+        return send_file(
+            memory_file,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name='perplexity-extension.zip'
+        )
+
+    except Exception as e:
+        print(f"❌ Error creating extension ZIP: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"Error: {str(e)}", 500
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8765))
 
     print("\n" + "="*80)
-    print("🚀 Perplexity API Server - Simple Version")
+    print("🚀 Perplexity Proxy Server")
     print("="*80)
     print(f"")
     print(f"✅ Server running at: http://localhost:{port}")
@@ -531,19 +592,17 @@ if __name__ == '__main__':
     print(f"🔗 API Endpoint: http://localhost:{port}/chat/completions")
     print(f"")
     print(f"🎯 Quick Start:")
-    print(f"   1. Open http://localhost:{port}/ in your browser")
-    print(f"   2. Generate an API key")
-    print(f"   3. Configure your tools:")
-    print(f"      - Base URL: http://localhost:{port}")
-    print(f"      - API Key: <your-generated-key>")
+    print(f"   1. Open http://localhost:{port}/ to generate an API key")
+    print(f"   2. Send POST requests to /chat/completions")
+    print(f"   3. Get raw Perplexity responses")
     print(f"")
-    print(f"📝 Supported models:")
-    print(f"   - sonar (default)")
+    print(f"📝 Available modes:")
+    print(f"   - sonar (default/auto)")
     print(f"   - sonar-pro")
     print(f"   - sonar-reasoning")
     print(f"   - sonar-deep-research")
     print(f"")
-    print(f"🍪 Cookie: {'✅ Active' if cookies else '❌ Not set (anonymous mode)'}")
+    print(f"🍪 Cookie: {'✅ Authenticated' if cookies else '❌ Not set (anonymous mode)'}")
     print(f"")
     print(f"Press Ctrl+C to stop")
     print("="*80 + "\n")

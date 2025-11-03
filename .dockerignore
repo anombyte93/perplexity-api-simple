@@ -1,0 +1,93 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+.pytype/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+
+# Environment & secrets (these should be mounted as volumes)
+.env
+.api_keys.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Documentation (not needed in container)
+README.md
+CLAUDE.md
+GEMINI.md
+DOCKER.md
+docs/
+
+# Task Master (not needed in container)
+.taskmaster/
+
+# Claude Code (not needed in container)
+.claude/
+.mcp.json
+
+# Scripts (not needed in container - use CMD instead)
+scripts/
+
+# Tests (not needed in production container)
+tests/
+test_*.py
+*_test.py
+
+# Docker
+docker-compose.yml
+Dockerfile
+.dockerignore
+
+# Temporary files
+*.log
+*.tmp
+*.temp
+.cache/
+
+# OS files
+Thumbs.db
